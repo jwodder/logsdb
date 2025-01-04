@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "jwodder-logsdb"
 dynamic = ["version"]
 description = "Record incoming server activity in a database"
-readme = "README.rst"
+#readme = "README.rst"
 requires-python = ">=3.11"
 license = "MIT"
 license-files = { paths = ["LICENSE"] }
