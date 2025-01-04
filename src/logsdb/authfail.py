@@ -1,5 +1,5 @@
 from __future__ import annotations
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 import json
 import re
@@ -7,14 +7,14 @@ import sys
 import traceback
 from prettytable import PrettyTable
 import sqlalchemy as sa
-from sqlalchemy.orm import Mapped, MappedAsDataclass
+from sqlalchemy.orm import Mapped, MappedAsDataclass, mapped_column
 from .core import Base, Database, IpAddr, PKey, Str255, iso8601_Z, one_day_ago
 
 
 class AuthfailEvent(MappedAsDataclass, Base):
     __tablename__ = "authfail"
 
-    id: Mapped[PKey] = field(init=False)
+    id: Mapped[PKey] = mapped_column(init=False)
     timestamp: Mapped[datetime]
     username: Mapped[Str255]
     src_addr: Mapped[IpAddr]
@@ -32,7 +32,7 @@ class Authfail:
         tbl.align["Attempts"] = "r"
         tbl.align["IP Address"] = "l"
         for src_addr, qty in self.db.session.execute(
-            sa.select([AuthfailEvent.src_addr, sa.func.COUNT("*").label("qty")])
+            sa.select(AuthfailEvent.src_addr, sa.func.COUNT("*").label("qty"))
             .where(AuthfailEvent.timestamp >= one_day_ago())
             .group_by(AuthfailEvent.src_addr)
             .order_by(sa.desc("qty"), sa.asc(AuthfailEvent.src_addr))
@@ -62,10 +62,11 @@ MSG_REGEXEN = [
 ]
 
 
-def main():
+def main() -> None:
     line = None
     try:
-        with Database.connect() as db, Authfail(db) as failures:
+        with Database.connect() as db:
+            tbl = Authfail(db)
             # `for line in sys.stdin` cannot be used here because Python
             # buffers stdin when iterating over it, causing the script to wait
             # for some too-large number of lines to be passed to it until it'll
@@ -73,12 +74,13 @@ def main():
             for line in iter(sys.stdin.readline, ""):
                 for rgx in MSG_REGEXEN:
                     if m := rgx.fullmatch(line):
-                        event = AuthfailEvent(
-                            timestamp=datetime.fromisoformat(m["timestamp"]),
-                            username=m["username"],
-                            src_addr=m["src_addr"],
+                        tbl.insert(
+                            AuthfailEvent(
+                                timestamp=datetime.fromisoformat(m["timestamp"]),
+                                username=m["username"],
+                                src_addr=m["src_addr"],
+                            )
                         )
-                        failures.insert(event)
                         break
                 else:
                     raise ValueError("Could not parse logfile entry")

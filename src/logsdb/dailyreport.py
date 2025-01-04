@@ -1,6 +1,5 @@
 from __future__ import annotations
 from email.message import EmailMessage
-from inspect import signature
 import json
 import os
 from pathlib import Path
@@ -55,29 +54,26 @@ def check_disk(tags: set[str]) -> str:
 
 def check_authfail(db: Database) -> str | None:
     try:
-        from jwodder_logsdb.authfail import Authfail
+        from logsdb.authfail import Authfail
     except ImportError:
         return None
-    with Authfail(db) as tbl:
-        return tbl.daily_report()
+    return Authfail(db).daily_report()
 
 
 def check_apache_access(db: Database) -> str | None:
     try:
-        from jwodder_logsdb.apache_access import ApacheAccess
+        from logsdb.apache_access import ApacheAccess
     except ImportError:
         return None
-    with ApacheAccess(db) as tbl:
-        return tbl.daily_report()
+    return ApacheAccess(db).daily_report()
 
 
 def check_inbox(db: Database) -> str | None:
     try:
-        from jwodder_logsdb.maillog import MailLog
+        from logsdb.maillog import MailLog
     except ImportError:
         return None
-    with MailLog(db) as tbl:
-        return tbl.daily_report()
+    return MailLog(db).daily_report()
 
 
 def check_mailbox(tags: set[str]) -> None:
@@ -122,30 +118,19 @@ def check_vnstat() -> str:
 
 
 def main() -> None:
-    body = ""
-    tags = set()
+    tags: set[str] = set()
+    reports = []
     with Database.connect() as db:
-        for check in [
-            check_mailbox,
-            check_errlogs,
-            check_reboot,
-            check_load,
-            check_disk,
-            check_vnstat,
-            check_inbox,
-            check_authfail,
-            check_apache_access,
-        ]:
-            kwargs = {}
-            if "db" in signature(check).parameters:
-                kwargs["db"] = db
-            if "tags" in signature(check).parameters:
-                kwargs["tags"] = tags
-            report = check(**kwargs)
-            if report is not None and report != "":
-                if body:
-                    body += "\n"
-                body += report
+        check_mailbox(tags)
+        reports.append(check_errlogs(tags))
+        reports.append(check_reboot(tags))
+        reports.append(check_load())
+        reports.append(check_disk(tags))
+        reports.append(check_vnstat())
+        reports.append(check_inbox(db))
+        reports.append(check_authfail(db))
+        reports.append(check_apache_access(db))
+    body = "\n".join(r for r in reports if r is not None and r != "")
     if not body:
         body = "Nothing to report\n"
     subject = ""

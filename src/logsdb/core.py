@@ -61,18 +61,18 @@ class Database:
         self.session.commit()
 
 
-def longint(n):
-    n = str(n)
-    nl = len(n)
-    triples = [n[i : i + 3] for i in range(nl % 3, nl, 3)]
+def longint(n: int) -> str:
+    ns = str(n)
+    nl = len(ns)
+    triples = [ns[i : i + 3] for i in range(nl % 3, nl, 3)]
     if nl % 3:
-        triples = [n[: nl % 3]] + triples
+        triples = [ns[: nl % 3]] + triples
     return " ".join(triples)
 
 
-def one_day_ago():
+def one_day_ago() -> datetime:
     return datetime.now(timezone.utc).astimezone() - timedelta(days=1)
 
 
-def iso8601_Z():
+def iso8601_Z() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())

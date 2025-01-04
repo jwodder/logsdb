@@ -1,6 +1,6 @@
 from __future__ import annotations
 import ast
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 import json
 import sys
@@ -24,7 +24,7 @@ from .core import (
 class ApacheEvent(MappedAsDataclass, Base):
     __tablename__ = "apache_access"
 
-    id: Mapped[PKey] = field(init=False)
+    id: Mapped[PKey] = mapped_column(init=False)
     timestamp: Mapped[datetime]
     host: Mapped[Str255]
     port: Mapped[int]
@@ -58,13 +58,11 @@ class ApacheAccess:
         bytesOut = 0
         for reqline, qty, byin, byout in self.db.session.execute(
             sa.select(
-                [
-                    ApacheEvent.reqline,
-                    # func.count() [lowercase!] == COUNT(*)
-                    sa.func.count().label("qty"),
-                    sa.func.SUM(ApacheEvent.bytesin),
-                    sa.func.SUM(ApacheEvent.bytesout),
-                ]
+                ApacheEvent.reqline,
+                # func.count() [lowercase!] == COUNT(*)
+                sa.func.count().label("qty"),
+                sa.func.SUM(ApacheEvent.bytesin),
+                sa.func.SUM(ApacheEvent.bytesout),
             )
             .where(ApacheEvent.timestamp >= one_day_ago())
             .group_by(ApacheEvent.reqline)
@@ -74,25 +72,26 @@ class ApacheAccess:
             bytesIn += byin
             bytesOut += byout
         report += tbl.get_string() + "\n"
-        bytesIn = longint(bytesIn)
-        bytesOut = longint(bytesOut)
-        width = max(len(bytesIn), len(bytesOut))
+        s_bytesIn = longint(bytesIn)
+        s_bytesOut = longint(bytesOut)
+        width = max(len(s_bytesIn), len(s_bytesOut))
         report += "Total bytes sent:     %*s\n" "Total bytes received: %*s\n" % (
             width,
-            bytesOut,
+            s_bytesOut,
             width,
-            bytesIn,
+            s_bytesIn,
         )
         return report
 
 
-def main():
+def main() -> None:
     # Apache log format:
     # "%{%Y-%m-%d %H:%M:%S %z}t|%v|%p|%a|%I|%O|%D|%>s|[\"%u\", \"%r\", \"%m\",
     #  \"%U%q\", \"%H\", \"%{Referer}i\", \"%{User-Agent}i\"]"
     line = None
     try:
-        with Database.connect() as db, ApacheAccess(db) as accesses:
+        with Database.connect() as db:
+            tbl = ApacheAccess(db)
             # `for line in sys.stdin` cannot be used here because Python
             # buffers stdin when iterating over it, causing the script to wait
             # for some too-large number of lines to be passed to it until it'll
@@ -112,7 +111,7 @@ def main():
                 authuser, reqline, method, path, protocol, referer, user_agent = map(
                     reencode, ast.literal_eval(strs)
                 )
-                accesses.insert(
+                tbl.insert(
                     ApacheEvent(
                         timestamp=datetime.fromisoformat(timestamp),
                         host=host,
@@ -149,7 +148,7 @@ def main():
         sys.exit(1)
 
 
-def reencode(s):
+def reencode(s: str) -> str:
     return s.encode("iso-8859-1").decode("utf-8")
 
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 from collections.abc import Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from email import message_from_bytes, policy
 from email.headerregistry import Address
@@ -11,11 +11,11 @@ from sqlalchemy.orm import Mapped, MappedAsDataclass, mapped_column, relationshi
 from .core import Base, Database, PKey, Str2048, iso8601_Z, one_day_ago
 
 
-class Contact(Base):
+class Contact(MappedAsDataclass, Base):
     __tablename__ = "inbox_contacts"
     __table_args__ = (sa.UniqueConstraint("realname", "email_address"),)
 
-    id: Mapped[PKey] = field(init=False)
+    id: Mapped[PKey] = mapped_column(init=False)
     realname: Mapped[Str2048]
     email_address: Mapped[Str2048]
 
@@ -25,31 +25,38 @@ class Contact(Base):
         return str(Address(self.realname, addr_spec=self.email_address))
 
 
-class ToCC(MappedAsDataclass, Base):
-    __tablename__ = "inbox_tocc"
-    __table_args__ = (sa.UniqueConstraint("msg_id", "contact_id"),)
+inbox_tocc = sa.Table(
+    "inbox_tocc",
+    Base.metadata,
+    sa.Column(
+        "msg_id",
+        sa.Integer,
+        sa.ForeignKey("inbox.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.Column(
+        "contact_id",
+        sa.Integer,
+        sa.ForeignKey("inbox_contacts.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.UniqueConstraint("msg_id", "contact_id"),
+)
 
-    msg_id: Mapped[PKey] = mapped_column(
-        sa.ForeignKey("inbox.id", ondelete="CASCADE"), init=False
-    )
-    contact_id: Mapped[PKey] = mapped_column(
-        sa.ForeignKey("inbox_contacts.id", ondelete="CASCADE"), init=False
-    )
 
-
-class EMail(Base):
+class EMail(MappedAsDataclass, Base):
     __tablename__ = "inbox"
 
-    id: Mapped[PKey] = field(init=False)
+    id: Mapped[PKey] = mapped_column(init=False)
     timestamp: Mapped[datetime]
     subject: Mapped[Str2048]
     sender_id: Mapped[int] = mapped_column(
         sa.ForeignKey("inbox_contacts.id", ondelete="CASCADE"), init=False
     )
-    sender: Mapped[Contact] = relationship(init=False)
+    sender: Mapped[Contact] = relationship()
     size: Mapped[int]
     date: Mapped[datetime]
-    tocc: Mapped[Contact] = relationship(secondary=ToCC)
+    tocc: Mapped[list[Contact]] = relationship(secondary=inbox_tocc)
 
 
 @dataclass
@@ -124,20 +131,22 @@ class MailLog:
         return report
 
 
-def main():
+def main() -> None:
     try:
         rawmsg = sys.stdin.buffer.read()
         size = len(rawmsg)
-        msg = message_from_bytes(rawmsg, policy=policy.default)
+        # <https://github.com/python/typeshed/issues/13273>
+        msg = message_from_bytes(rawmsg, policy=policy.default)  # type: ignore[arg-type]
         recipients = ()
         for fieldname in ("To", "CC"):
             if fieldname in msg:
-                recipients += msg[fieldname].addresses
-        with Database.connect() as db, MailLog(db) as tbl:
+                recipients += msg[fieldname].addresses  # type: ignore
+        with Database.connect() as db:
+            tbl = MailLog(db)
             tbl.insert_entry(
                 subject=msg["Subject"] or "NO SUBJECT",
-                sender=msg["From"].addresses[0],
-                date=msg["Date"].datetime,
+                sender=msg["From"].addresses[0],  # type: ignore
+                date=msg["Date"].datetime,  # type: ignore
                 recipients=recipients,
                 size=size,
             )
