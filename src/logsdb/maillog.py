@@ -131,7 +131,7 @@ class MailLog:
         return report
 
 
-def main() -> None:
+def process_input(db: Database) -> None:
     try:
         rawmsg = sys.stdin.buffer.read()
         size = len(rawmsg)
@@ -141,21 +141,16 @@ def main() -> None:
         for fieldname in ("To", "CC"):
             if fieldname in msg:
                 recipients += msg[fieldname].addresses  # type: ignore
-        with Database.connect() as db:
-            tbl = MailLog(db)
-            tbl.insert_entry(
-                subject=msg["Subject"] or "NO SUBJECT",
-                sender=msg["From"].addresses[0],  # type: ignore
-                date=msg["Date"].datetime,  # type: ignore
-                recipients=recipients,
-                size=size,
-            )
+        tbl = MailLog(db)
+        tbl.insert_entry(
+            subject=msg["Subject"] or "NO SUBJECT",
+            sender=msg["From"].addresses[0],  # type: ignore
+            date=msg["Date"].datetime,  # type: ignore
+            recipients=recipients,
+            size=size,
+        )
     except Exception:
         ### TODO: Include a description of the e-mail?
         ### (Message-ID, first few characters, ???)
         print(f"\n{iso8601_Z()}: Error processing e-mail", file=sys.stderr)
         raise
-
-
-if __name__ == "__main__":
-    main()

@@ -84,52 +84,50 @@ class ApacheAccess:
         return report
 
 
-def main() -> None:
+def process_input(db: Database) -> None:
     # Apache log format:
     # "%{%Y-%m-%d %H:%M:%S %z}t|%v|%p|%a|%I|%O|%D|%>s|[\"%u\", \"%r\", \"%m\",
     #  \"%U%q\", \"%H\", \"%{Referer}i\", \"%{User-Agent}i\"]"
     line = None
     try:
-        with Database.connect() as db:
-            tbl = ApacheAccess(db)
-            # `for line in sys.stdin` cannot be used here because Python
-            # buffers stdin when iterating over it, causing the script to wait
-            # for some too-large number of lines to be passed to it until it'll
-            # do anything.
-            for line in iter(sys.stdin.readline, ""):
-                (
-                    timestamp,
-                    host,
-                    port,
-                    src_addr,
-                    bytesIn,
-                    bytesOut,
-                    microsecs,
-                    status,
-                    strs,
-                ) = line.split("|", 8)
-                authuser, reqline, method, path, protocol, referer, user_agent = map(
-                    reencode, ast.literal_eval(strs)
+        tbl = ApacheAccess(db)
+        # `for line in sys.stdin` cannot be used here because Python buffers
+        # stdin when iterating over it, causing the script to wait for some
+        # too-large number of lines to be passed to it until it'll do anything.
+        for line in iter(sys.stdin.readline, ""):
+            (
+                timestamp,
+                host,
+                port,
+                src_addr,
+                bytesIn,
+                bytesOut,
+                microsecs,
+                status,
+                strs,
+            ) = line.split("|", 8)
+            authuser, reqline, method, path, protocol, referer, user_agent = map(
+                reencode, ast.literal_eval(strs)
+            )
+            tbl.insert(
+                ApacheEvent(
+                    timestamp=datetime.fromisoformat(timestamp),
+                    host=host,
+                    port=int(port),
+                    src_addr=src_addr,
+                    authuser=authuser,
+                    bytesin=int(bytesIn),
+                    bytesout=int(bytesOut),
+                    microsecs=int(microsecs),
+                    status=int(status),
+                    reqline=reqline,
+                    method=method,
+                    path=path,
+                    protocol=protocol,
+                    referer=referer,
+                    user_agent=user_agent,
                 )
-                tbl.insert(
-                    ApacheEvent(
-                        timestamp=datetime.fromisoformat(timestamp),
-                        host=host,
-                        port=int(port),
-                        src_addr=src_addr,
-                        authuser=authuser,
-                        bytesin=int(bytesIn),
-                        bytesout=int(bytesOut),
-                        microsecs=int(microsecs),
-                        status=int(status),
-                        reqline=reqline,
-                        method=method,
-                        path=path,
-                        protocol=protocol,
-                        referer=referer,
-                        user_agent=user_agent,
-                    )
-                )
+            )
     except Exception as e:
         print(
             json.dumps(
@@ -150,7 +148,3 @@ def main() -> None:
 
 def reencode(s: str) -> str:
     return s.encode("iso-8859-1").decode("utf-8")
-
-
-if __name__ == "__main__":
-    main()

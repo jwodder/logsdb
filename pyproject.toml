@@ -32,10 +32,15 @@ classifiers = [
 ]
 
 dependencies = [
+    "click ~= 8.0",
     "prettytable ~= 3.12.0",
     "psycopg2-binary ~= 2.7",
+    "pydantic ~= 2.0",
     "SQLAlchemy ~= 2.0",
 ]
+
+[project.scripts]
+logsdb = "logsdb.__main__:main"
 
 [project.urls]
 "Source Code" = "https://github.com/jwodder/logsdb"
@@ -72,3 +77,8 @@ strict_equality = true
 warn_redundant_casts = true
 warn_return_any = true
 warn_unreachable = true
+plugins = ["pydantic.mypy"]
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+warn_required_dynamic_aliases = true

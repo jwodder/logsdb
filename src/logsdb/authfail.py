@@ -62,28 +62,26 @@ MSG_REGEXEN = [
 ]
 
 
-def main() -> None:
+def process_input(db: Database) -> None:
     line = None
     try:
-        with Database.connect() as db:
-            tbl = Authfail(db)
-            # `for line in sys.stdin` cannot be used here because Python
-            # buffers stdin when iterating over it, causing the script to wait
-            # for some too-large number of lines to be passed to it until it'll
-            # do anything.
-            for line in iter(sys.stdin.readline, ""):
-                for rgx in MSG_REGEXEN:
-                    if m := rgx.fullmatch(line):
-                        tbl.insert(
-                            AuthfailEvent(
-                                timestamp=datetime.fromisoformat(m["timestamp"]),
-                                username=m["username"],
-                                src_addr=m["src_addr"],
-                            )
+        tbl = Authfail(db)
+        # `for line in sys.stdin` cannot be used here because Python buffers
+        # stdin when iterating over it, causing the script to wait for some
+        # too-large number of lines to be passed to it until it'll do anything.
+        for line in iter(sys.stdin.readline, ""):
+            for rgx in MSG_REGEXEN:
+                if m := rgx.fullmatch(line):
+                    tbl.insert(
+                        AuthfailEvent(
+                            timestamp=datetime.fromisoformat(m["timestamp"]),
+                            username=m["username"],
+                            src_addr=m["src_addr"],
                         )
-                        break
-                else:
-                    raise ValueError("Could not parse logfile entry")
+                    )
+                    break
+            else:
+                raise ValueError("Could not parse logfile entry")
     except Exception as e:
         print(
             json.dumps(
@@ -100,7 +98,3 @@ def main() -> None:
             flush=True,
         )
         sys.exit(1)
-
-
-if __name__ == "__main__":
-    main()

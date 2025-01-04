@@ -1,16 +1,12 @@
 from __future__ import annotations
 from dataclasses import InitVar, dataclass, field
 from datetime import datetime, timedelta, timezone
-import json
-from pathlib import Path
 import time
 from types import TracebackType
 from typing import Annotated, Any
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import INET
 from sqlalchemy.orm import DeclarativeBase, Session, mapped_column, registry
-
-JWODDER_ROOT = Path(__file__).parents[2]
 
 PKey = Annotated[int, mapped_column(primary_key=True)]
 Str255 = Annotated[str, mapped_column(sa.Unicode(255))]
@@ -32,17 +28,8 @@ class Database:
         self.session = Session(engine)
 
     @classmethod
-    def connect(cls) -> Database:
-        creds = json.loads((JWODDER_ROOT / "etc" / "logsdb.json").read_text())
-        engine = sa.create_engine(
-            sa.engine.URL.create(
-                drivername="postgresql",
-                host="localhost",
-                database=creds["database"],
-                username=creds["username"],
-                password=creds["password"],
-            )
-        )
+    def connect(cls, url: sa.engine.URL) -> Database:
+        engine = sa.create_engine(url)
         return cls(engine)
 
     def __enter__(self) -> Database:

@@ -1,29 +1,25 @@
 from __future__ import annotations
-from email.message import EmailMessage
+from dataclasses import dataclass
 import json
-import os
 from pathlib import Path
 from shutil import disk_usage
 import socket
 import subprocess
-import sys
-from .core import JWODDER_ROOT, Database, iso8601_Z, longint
+from .config import Config
+from .core import Database, iso8601_Z, longint
 
-RECIPIENT = "jwodder@gmail.com"
-MAILBOX = Path("/home/jwodder/Mail/INBOX")
 NETDEVICE = "eth0"
 DISK_THRESHOLD = 50  # measured in percentage points
-LOGS_DIR = JWODDER_ROOT / "logs"
 
 TAGSEQ = "DISK LOGERR REBOOT MAIL".split()
 
 
-def check_errlogs(tags: set[str]) -> str | None:
-    errlogs = [p for p in LOGS_DIR.iterdir() if p.stat().st_size > 0]
+def check_errlogs(logs_dir: Path, tags: set[str]) -> str | None:
+    errlogs = [p for p in logs_dir.iterdir() if p.stat().st_size > 0]
     if errlogs:
         tags.add("LOGERR")
         return "The following files in {} are nonempty:\n{}".format(
-            LOGS_DIR,
+            logs_dir,
             "".join(map("    {0.name}\n".format, errlogs)),
         )
     else:
@@ -53,31 +49,25 @@ def check_disk(tags: set[str]) -> str:
 
 
 def check_authfail(db: Database) -> str | None:
-    try:
-        from logsdb.authfail import Authfail
-    except ImportError:
-        return None
+    from .authfail import Authfail
+
     return Authfail(db).daily_report()
 
 
 def check_apache_access(db: Database) -> str | None:
-    try:
-        from logsdb.apache_access import ApacheAccess
-    except ImportError:
-        return None
+    from .apache_access import ApacheAccess
+
     return ApacheAccess(db).daily_report()
 
 
 def check_inbox(db: Database) -> str | None:
-    try:
-        from logsdb.maillog import MailLog
-    except ImportError:
-        return None
+    from .maillog import MailLog
+
     return MailLog(db).daily_report()
 
 
-def check_mailbox(tags: set[str]) -> None:
-    if MAILBOX.exists() and MAILBOX.stat().st_size > 0:
+def check_mailbox(mailbox: Path, tags: set[str]) -> None:
+    if mailbox.exists() and mailbox.stat().st_size > 0:
         tags.add("MAIL")
 
 
@@ -117,18 +107,26 @@ def check_vnstat() -> str:
     )
 
 
-def main() -> None:
+@dataclass
+class DailyReport:
+    subject: str
+    body: str
+
+
+def get_daily_report(db: Database, cfg: Config) -> DailyReport:
     tags: set[str] = set()
     reports = []
-    with Database.connect() as db:
-        check_mailbox(tags)
-        reports.append(check_errlogs(tags))
-        reports.append(check_reboot(tags))
-        reports.append(check_load())
-        reports.append(check_disk(tags))
-        reports.append(check_vnstat())
+    check_mailbox(cfg.dailyreport.mailbox, tags)
+    reports.append(check_errlogs(cfg.dailyreport.logs_dir, tags))
+    reports.append(check_reboot(tags))
+    reports.append(check_load())
+    reports.append(check_disk(tags))
+    reports.append(check_vnstat())
+    if cfg.features.maillog:
         reports.append(check_inbox(db))
+    if cfg.features.authfail:
         reports.append(check_authfail(db))
+    if cfg.features.apache_access:
         reports.append(check_apache_access(db))
     body = "\n".join(r for r in reports if r is not None and r != "")
     if not body:
@@ -141,24 +139,4 @@ def main() -> None:
     for t in sorted(tags):
         subject += "[" + t + "] "
     subject += f"Status Report: {socket.gethostname()}, {iso8601_Z()}"
-    if sys.stdout.isatty():
-        # Something about typical dailyreport contents (the size? long lines?)
-        # invariably causes serialized EmailMessage's to use quoted-printable
-        # transfer encoding no matter what I do.  Thus, in order to actually be
-        # able to view non-ASCII characters in subjects of recently-received
-        # e-mails in `less`, we need to basically output a pseudo-e-email.
-        subprocess.run(
-            [os.environ.get("PAGER", "less")],
-            input=f"Subject: {subject}\n\n{body}",
-            encoding="utf-8",
-        )
-    else:
-        msg = EmailMessage()
-        msg["Subject"] = subject
-        msg["To"] = RECIPIENT
-        msg.set_content(body)
-        print(str(msg))
-
-
-if __name__ == "__main__":
-    main()
+    return DailyReport(subject, body)
