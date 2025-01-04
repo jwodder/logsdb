@@ -1,42 +1,42 @@
-#!/usr/bin/python3
+from __future__ import annotations
 from datetime import datetime, timezone
 from email import message_from_bytes, policy
 from email.headerregistry import Address
 import subprocess
 import sys
-import sqlalchemy as S
+import sqlalchemy as sa
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, sessionmaker
 from .core import connect, iso8601_Z, one_day_ago
 
 Base = declarative_base()
 
-inbox_tocc = S.Table(
+inbox_tocc = sa.Table(
     "inbox_tocc",
     Base.metadata,
-    S.Column(
+    sa.Column(
         "msg_id",
-        S.Integer,
-        S.ForeignKey("inbox.id", ondelete="CASCADE"),
+        sa.Integer,
+        sa.ForeignKey("inbox.id", ondelete="CASCADE"),
         nullable=False,
     ),
-    S.Column(
+    sa.Column(
         "contact_id",
-        S.Integer,
-        S.ForeignKey("inbox_contacts.id", ondelete="CASCADE"),
+        sa.Integer,
+        sa.ForeignKey("inbox_contacts.id", ondelete="CASCADE"),
         nullable=False,
     ),
-    S.UniqueConstraint("msg_id", "contact_id"),
+    sa.UniqueConstraint("msg_id", "contact_id"),
 )
 
 
 class Contact(Base):
     __tablename__ = "inbox_contacts"
-    __table_args__ = (S.UniqueConstraint("realname", "email_address"),)
+    __table_args__ = (sa.UniqueConstraint("realname", "email_address"),)
 
-    id = S.Column(S.Integer, primary_key=True, nullable=False)
-    realname = S.Column(S.Unicode(2048), nullable=False)
-    email_address = S.Column(S.Unicode(2048), nullable=False)
+    id = sa.Column(sa.Integer, primary_key=True, nullable=False)
+    realname = sa.Column(sa.Unicode(2048), nullable=False)
+    email_address = sa.Column(sa.Unicode(2048), nullable=False)
 
     def __str__(self):
         # email.utils.formataddr performs an undesirable encoding of non-ASCII
@@ -47,18 +47,18 @@ class Contact(Base):
 class EMail(Base):
     __tablename__ = "inbox"
 
-    id = S.Column(S.Integer, primary_key=True, nullable=False)
-    timestamp = S.Column(S.DateTime(timezone=True), nullable=False)
-    subject = S.Column(S.Unicode(2048), nullable=False)
-    sender_id = S.Column(
+    id = sa.Column(sa.Integer, primary_key=True, nullable=False)
+    timestamp = sa.Column(sa.DateTime(timezone=True), nullable=False)
+    subject = sa.Column(sa.Unicode(2048), nullable=False)
+    sender_id = sa.Column(
         "sender",
-        S.Integer,
-        S.ForeignKey("inbox_contacts.id", ondelete="CASCADE"),
+        sa.Integer,
+        sa.ForeignKey("inbox_contacts.id", ondelete="CASCADE"),
         nullable=False,
     )
     sender = relationship("Contact")
-    size = S.Column(S.Integer, nullable=False)
-    date = S.Column(S.DateTime(timezone=True), nullable=False)
+    size = sa.Column(sa.Integer, nullable=False)
+    date = sa.Column(sa.DateTime(timezone=True), nullable=False)
     tocc = relationship("Contact", secondary=inbox_tocc)
 
 
@@ -120,7 +120,7 @@ class MailLog:
         newmail = (
             self.session.query(EMail)
             .filter(EMail.timestamp >= one_day_ago())
-            .order_by(S.asc(EMail.timestamp), S.asc(EMail.id))
+            .order_by(sa.asc(EMail.timestamp), sa.asc(EMail.id))
             .all()
         )
         if not newmail:

@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+from __future__ import annotations
 from email.message import EmailMessage
 from inspect import signature
 import json

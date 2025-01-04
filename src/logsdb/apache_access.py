@@ -1,34 +1,34 @@
-#!/usr/bin/python3
+from __future__ import annotations
 import ast
 import json
 import sys
 import traceback
 from prettytable import PrettyTable
-import sqlalchemy as S
+import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import INET
 from .core import SchemaConn, connect, iso8601_Z, longint, one_day_ago
 
 ### TODO: Is there any reason not to define these at module level?
-schema = S.MetaData()
+schema = sa.MetaData()
 
-apache_access = S.Table(
+apache_access = sa.Table(
     "apache_access",
     schema,
-    S.Column("timestamp", S.DateTime(timezone=True), nullable=False),
-    S.Column("host", S.Unicode(255), nullable=False),
-    S.Column("port", S.Integer, nullable=False),
-    S.Column("src_addr", INET, nullable=False),
-    S.Column("authuser", S.Unicode(255), nullable=False),
-    S.Column("bytesin", S.Integer, nullable=False),
-    S.Column("bytesout", S.Integer, nullable=False),
-    S.Column("microsecs", S.BigInteger, nullable=False),
-    S.Column("status", S.Integer, nullable=False),
-    S.Column("reqline", S.Unicode(2048), nullable=False),
-    S.Column("method", S.Unicode(255), nullable=False),
-    S.Column("path", S.Unicode(2048), nullable=False),
-    S.Column("protocol", S.Unicode(255), nullable=False),
-    S.Column("referer", S.Unicode(2048), nullable=False),
-    S.Column("user_agent", S.Unicode(2048), nullable=False),
+    sa.Column("timestamp", sa.DateTime(timezone=True), nullable=False),
+    sa.Column("host", sa.Unicode(255), nullable=False),
+    sa.Column("port", sa.Integer, nullable=False),
+    sa.Column("src_addr", INET, nullable=False),
+    sa.Column("authuser", sa.Unicode(255), nullable=False),
+    sa.Column("bytesin", sa.Integer, nullable=False),
+    sa.Column("bytesout", sa.Integer, nullable=False),
+    sa.Column("microsecs", sa.BigInteger, nullable=False),
+    sa.Column("status", sa.Integer, nullable=False),
+    sa.Column("reqline", sa.Unicode(2048), nullable=False),
+    sa.Column("method", sa.Unicode(255), nullable=False),
+    sa.Column("path", sa.Unicode(2048), nullable=False),
+    sa.Column("protocol", sa.Unicode(255), nullable=False),
+    sa.Column("referer", sa.Unicode(2048), nullable=False),
+    sa.Column("user_agent", sa.Unicode(2048), nullable=False),
 )
 
 
@@ -81,18 +81,18 @@ class ApacheAccess(SchemaConn):
         bytesIn = 0
         bytesOut = 0
         for reqline, qty, byin, byout in self.conn.execute(
-            S.select(
+            sa.select(
                 [
                     apache_access.c.reqline,
                     # func.count() [lowercase!] == COUNT(*)
-                    S.func.count().label("qty"),
-                    S.func.SUM(apache_access.c.bytesin),
-                    S.func.SUM(apache_access.c.bytesout),
+                    sa.func.count().label("qty"),
+                    sa.func.SUM(apache_access.c.bytesin),
+                    sa.func.SUM(apache_access.c.bytesout),
                 ]
             )
             .where(apache_access.c.timestamp >= one_day_ago())
             .group_by(apache_access.c.reqline)
-            .order_by(S.desc("qty"), S.asc(apache_access.c.reqline))
+            .order_by(sa.desc("qty"), sa.asc(apache_access.c.reqline))
         ):
             tbl.add_row([qty, reqline])
             bytesIn += byin

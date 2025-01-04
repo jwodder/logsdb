@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 import time
-import sqlalchemy as S
+import sqlalchemy as sa
 
 JWODDER_ROOT = Path(__file__).parents[2]
 
@@ -25,8 +25,8 @@ class SchemaConn:
 
 def connect() -> Engine:
     creds = json.loads((JWODDER_ROOT / "etc" / "logsdb.json").read_text())
-    return S.create_engine(
-        S.engine.url.URL(
+    return sa.create_engine(
+        sa.engine.url.URL(
             drivername="postgresql",
             host="localhost",
             database=creds["database"],
