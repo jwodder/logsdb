@@ -8,7 +8,7 @@ from shutil import disk_usage
 import socket
 import subprocess
 import sys
-from .core import JWODDER_ROOT, connect, iso8601_Z, longint
+from .core import JWODDER_ROOT, Database, iso8601_Z, longint
 
 RECIPIENT = "jwodder@gmail.com"
 MAILBOX = Path("/home/jwodder/Mail/INBOX")
@@ -19,7 +19,7 @@ LOGS_DIR = JWODDER_ROOT / "logs"
 TAGSEQ = "DISK LOGERR REBOOT MAIL".split()
 
 
-def check_errlogs(tags):
+def check_errlogs(tags: set[str]) -> str | None:
     errlogs = [p for p in LOGS_DIR.iterdir() if p.stat().st_size > 0]
     if errlogs:
         tags.add("LOGERR")
@@ -27,14 +27,16 @@ def check_errlogs(tags):
             LOGS_DIR,
             "".join(map("    {0.name}\n".format, errlogs)),
         )
+    else:
+        return None
 
 
-def check_load():
+def check_load() -> str:
     with open("/proc/loadavg") as fp:
         return "Load: " + ", ".join(fp.read().split()[:3]) + "\n"
 
 
-def check_disk(tags):
+def check_disk(tags: set[str]) -> str:
     fssize, fsused, _ = disk_usage("/")
     sused = longint(fsused)
     ssize = longint(fssize)
@@ -51,39 +53,39 @@ def check_disk(tags):
     )
 
 
-def check_authfail(engine):
+def check_authfail(db: Database) -> str | None:
     try:
         from jwodder_logsdb.authfail import Authfail
     except ImportError:
         return None
-    with Authfail(engine) as db:
-        return db.daily_report()
+    with Authfail(db) as tbl:
+        return tbl.daily_report()
 
 
-def check_apache_access(engine):
+def check_apache_access(db: Database) -> str | None:
     try:
         from jwodder_logsdb.apache_access import ApacheAccess
     except ImportError:
         return None
-    with ApacheAccess(engine) as db:
-        return db.daily_report()
+    with ApacheAccess(db) as tbl:
+        return tbl.daily_report()
 
 
-def check_inbox(engine):
+def check_inbox(db: Database) -> str | None:
     try:
         from jwodder_logsdb.maillog import MailLog
     except ImportError:
         return None
-    with MailLog(engine) as db:
-        return db.daily_report()
+    with MailLog(db) as tbl:
+        return tbl.daily_report()
 
 
-def check_mailbox(tags):
+def check_mailbox(tags: set[str]) -> None:
     if MAILBOX.exists() and MAILBOX.stat().st_size > 0:
         tags.add("MAIL")
 
 
-def check_reboot(tags):
+def check_reboot(tags: set[str]) -> str | None:
     if Path("/var/run/reboot-required").exists():
         tags.add("REBOOT")
         try:
@@ -97,9 +99,11 @@ def check_reboot(tags):
         else:
             report += " UNKNOWN\n"
         return report
+    else:
+        return None
 
 
-def check_vnstat():
+def check_vnstat() -> str:
     vnstat = subprocess.check_output(
         ["vnstat", "--json", "d", "2", "-i", "eth0"],
         universal_newlines=True,
@@ -117,31 +121,31 @@ def check_vnstat():
     )
 
 
-def main():
+def main() -> None:
     body = ""
     tags = set()
-    engine = connect()
-    for check in [
-        check_mailbox,
-        check_errlogs,
-        check_reboot,
-        check_load,
-        check_disk,
-        check_vnstat,
-        check_inbox,
-        check_authfail,
-        check_apache_access,
-    ]:
-        kwargs = {}
-        if "engine" in signature(check).parameters:
-            kwargs["engine"] = engine
-        if "tags" in signature(check).parameters:
-            kwargs["tags"] = tags
-        report = check(**kwargs)
-        if report is not None and report != "":
-            if body:
-                body += "\n"
-            body += report
+    with Database.connect() as db:
+        for check in [
+            check_mailbox,
+            check_errlogs,
+            check_reboot,
+            check_load,
+            check_disk,
+            check_vnstat,
+            check_inbox,
+            check_authfail,
+            check_apache_access,
+        ]:
+            kwargs = {}
+            if "db" in signature(check).parameters:
+                kwargs["db"] = db
+            if "tags" in signature(check).parameters:
+                kwargs["tags"] = tags
+            report = check(**kwargs)
+            if report is not None and report != "":
+                if body:
+                    body += "\n"
+                body += report
     if not body:
         body = "Nothing to report\n"
     subject = ""

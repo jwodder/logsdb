@@ -1,98 +1,74 @@
 from __future__ import annotations
 import ast
+from dataclasses import dataclass, field
+from datetime import datetime
 import json
 import sys
 import traceback
 from prettytable import PrettyTable
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import INET
-from .core import SchemaConn, connect, iso8601_Z, longint, one_day_ago
-
-### TODO: Is there any reason not to define these at module level?
-schema = sa.MetaData()
-
-apache_access = sa.Table(
-    "apache_access",
-    schema,
-    sa.Column("timestamp", sa.DateTime(timezone=True), nullable=False),
-    sa.Column("host", sa.Unicode(255), nullable=False),
-    sa.Column("port", sa.Integer, nullable=False),
-    sa.Column("src_addr", INET, nullable=False),
-    sa.Column("authuser", sa.Unicode(255), nullable=False),
-    sa.Column("bytesin", sa.Integer, nullable=False),
-    sa.Column("bytesout", sa.Integer, nullable=False),
-    sa.Column("microsecs", sa.BigInteger, nullable=False),
-    sa.Column("status", sa.Integer, nullable=False),
-    sa.Column("reqline", sa.Unicode(2048), nullable=False),
-    sa.Column("method", sa.Unicode(255), nullable=False),
-    sa.Column("path", sa.Unicode(2048), nullable=False),
-    sa.Column("protocol", sa.Unicode(255), nullable=False),
-    sa.Column("referer", sa.Unicode(2048), nullable=False),
-    sa.Column("user_agent", sa.Unicode(2048), nullable=False),
+from sqlalchemy.orm import Mapped, MappedAsDataclass, mapped_column
+from .core import (
+    Base,
+    Database,
+    IpAddr,
+    PKey,
+    Str255,
+    Str2048,
+    iso8601_Z,
+    longint,
+    one_day_ago,
 )
 
 
-class ApacheAccess(SchemaConn):
-    SCHEMA = schema
+class ApacheEvent(MappedAsDataclass, Base):
+    __tablename__ = "apache_access"
 
-    def insert_entry(
-        self,
-        timestamp,
-        host,
-        port,
-        src_addr,
-        authuser,
-        bytesin,
-        bytesout,
-        microsecs,
-        status,
-        reqline,
-        method,
-        path,
-        protocol,
-        referer,
-        user_agent,
-    ):
-        self.conn.execute(
-            apache_access.insert().values(
-                timestamp=timestamp,
-                host=host,
-                port=port,
-                src_addr=src_addr,
-                authuser=authuser,
-                bytesin=bytesin,
-                bytesout=bytesout,
-                microsecs=microsecs,
-                status=status,
-                reqline=reqline,
-                method=method,
-                path=path,
-                protocol=protocol,
-                referer=referer,
-                user_agent=user_agent,
-            )
-        )
+    id: Mapped[PKey] = field(init=False)
+    timestamp: Mapped[datetime]
+    host: Mapped[Str255]
+    port: Mapped[int]
+    src_addr: Mapped[IpAddr]
+    authuser: Mapped[Str255]
+    bytesin: Mapped[int]
+    bytesout: Mapped[int]
+    microsecs: Mapped[int] = mapped_column(sa.BigInteger)
+    status: Mapped[int]
+    reqline: Mapped[Str2048]
+    method: Mapped[Str255]
+    path: Mapped[Str2048]
+    protocol: Mapped[Str255]
+    referer: Mapped[Str2048]
+    user_agent: Mapped[Str2048]
 
-    def daily_report(self):
+
+@dataclass
+class ApacheAccess:
+    db: Database
+
+    def insert(self, event: ApacheEvent) -> None:
+        self.db.add(event)
+
+    def daily_report(self) -> str:
         report = "Website activity in the past 24 hours:\n"
         tbl = PrettyTable(["Hits", "Request"])
         tbl.align["Hits"] = "r"
         tbl.align["Request"] = "l"
         bytesIn = 0
         bytesOut = 0
-        for reqline, qty, byin, byout in self.conn.execute(
+        for reqline, qty, byin, byout in self.db.session.execute(
             sa.select(
                 [
-                    apache_access.c.reqline,
+                    ApacheEvent.reqline,
                     # func.count() [lowercase!] == COUNT(*)
                     sa.func.count().label("qty"),
-                    sa.func.SUM(apache_access.c.bytesin),
-                    sa.func.SUM(apache_access.c.bytesout),
+                    sa.func.SUM(ApacheEvent.bytesin),
+                    sa.func.SUM(ApacheEvent.bytesout),
                 ]
             )
-            .where(apache_access.c.timestamp >= one_day_ago())
-            .group_by(apache_access.c.reqline)
-            .order_by(sa.desc("qty"), sa.asc(apache_access.c.reqline))
+            .where(ApacheEvent.timestamp >= one_day_ago())
+            .group_by(ApacheEvent.reqline)
+            .order_by(sa.desc("qty"), sa.asc(ApacheEvent.reqline))
         ):
             tbl.add_row([qty, reqline])
             bytesIn += byin
@@ -112,10 +88,11 @@ class ApacheAccess(SchemaConn):
 
 def main():
     # Apache log format:
-    # "%{%Y-%m-%d %H:%M:%S %z}t|%v|%p|%a|%I|%O|%D|%>s|[\"%u\", \"%r\", \"%m\", \"%U%q\", \"%H\", \"%{Referer}i\", \"%{User-Agent}i\"]"
+    # "%{%Y-%m-%d %H:%M:%S %z}t|%v|%p|%a|%I|%O|%D|%>s|[\"%u\", \"%r\", \"%m\",
+    #  \"%U%q\", \"%H\", \"%{Referer}i\", \"%{User-Agent}i\"]"
     line = None
     try:
-        with ApacheAccess(connect()) as db:
+        with Database.connect() as db, ApacheAccess(db) as accesses:
             # `for line in sys.stdin` cannot be used here because Python
             # buffers stdin when iterating over it, causing the script to wait
             # for some too-large number of lines to be passed to it until it'll
@@ -135,22 +112,24 @@ def main():
                 authuser, reqline, method, path, protocol, referer, user_agent = map(
                     reencode, ast.literal_eval(strs)
                 )
-                db.insert_entry(
-                    timestamp=timestamp,
-                    host=host,
-                    port=int(port),
-                    src_addr=src_addr,
-                    authuser=authuser,
-                    bytesin=int(bytesIn),
-                    bytesout=int(bytesOut),
-                    microsecs=int(microsecs),
-                    status=int(status),
-                    reqline=reqline,
-                    method=method,
-                    path=path,
-                    protocol=protocol,
-                    referer=referer,
-                    user_agent=user_agent,
+                accesses.insert(
+                    ApacheEvent(
+                        timestamp=datetime.fromisoformat(timestamp),
+                        host=host,
+                        port=int(port),
+                        src_addr=src_addr,
+                        authuser=authuser,
+                        bytesin=int(bytesIn),
+                        bytesout=int(bytesOut),
+                        microsecs=int(microsecs),
+                        status=int(status),
+                        reqline=reqline,
+                        method=method,
+                        path=path,
+                        protocol=protocol,
+                        referer=referer,
+                        user_agent=user_agent,
+                    )
                 )
     except Exception as e:
         print(

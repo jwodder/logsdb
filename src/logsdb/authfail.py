@@ -1,46 +1,41 @@
 from __future__ import annotations
+from dataclasses import dataclass, field
+from datetime import datetime
 import json
 import re
 import sys
 import traceback
 from prettytable import PrettyTable
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import INET
-from .core import SchemaConn, connect, iso8601_Z, one_day_ago
-
-### TODO: Is there any reason not to define these at module level?
-schema = sa.MetaData()
-
-authfail = sa.Table(
-    "authfail",
-    schema,
-    sa.Column("timestamp", sa.DateTime(timezone=True), nullable=False),
-    sa.Column("username", sa.Unicode(255), nullable=False),
-    sa.Column("src_addr", INET, nullable=False),
-)
+from sqlalchemy.orm import Mapped, MappedAsDataclass
+from .core import Base, Database, IpAddr, PKey, Str255, iso8601_Z, one_day_ago
 
 
-class Authfail(SchemaConn):
-    SCHEMA = schema
+class AuthfailEvent(MappedAsDataclass, Base):
+    __tablename__ = "authfail"
 
-    def insert_entry(self, timestamp, username, src_addr):
-        self.conn.execute(
-            authfail.insert().values(
-                timestamp=timestamp,
-                username=username,
-                src_addr=src_addr,
-            )
-        )
+    id: Mapped[PKey] = field(init=False)
+    timestamp: Mapped[datetime]
+    username: Mapped[Str255]
+    src_addr: Mapped[IpAddr]
 
-    def daily_report(self):
+
+@dataclass
+class Authfail:
+    db: Database
+
+    def insert(self, event: AuthfailEvent) -> None:
+        self.db.add(event)
+
+    def daily_report(self) -> str:
         tbl = PrettyTable(["Attempts", "IP Address"])
         tbl.align["Attempts"] = "r"
         tbl.align["IP Address"] = "l"
-        for src_addr, qty in self.conn.execute(
-            sa.select([authfail.c.src_addr, sa.func.COUNT("*").label("qty")])
-            .where(authfail.c.timestamp >= one_day_ago())
-            .group_by(authfail.c.src_addr)
-            .order_by(sa.desc("qty"), sa.asc(authfail.c.src_addr))
+        for src_addr, qty in self.db.session.execute(
+            sa.select([AuthfailEvent.src_addr, sa.func.COUNT("*").label("qty")])
+            .where(AuthfailEvent.timestamp >= one_day_ago())
+            .group_by(AuthfailEvent.src_addr)
+            .order_by(sa.desc("qty"), sa.asc(AuthfailEvent.src_addr))
         ):
             tbl.add_row([qty, src_addr])
         return (
@@ -70,16 +65,20 @@ MSG_REGEXEN = [
 def main():
     line = None
     try:
-        with Authfail(connect()) as db:
+        with Database.connect() as db, Authfail(db) as failures:
             # `for line in sys.stdin` cannot be used here because Python
             # buffers stdin when iterating over it, causing the script to wait
             # for some too-large number of lines to be passed to it until it'll
             # do anything.
             for line in iter(sys.stdin.readline, ""):
                 for rgx in MSG_REGEXEN:
-                    m = rgx.fullmatch(line)
-                    if m:
-                        db.insert_entry(**m.groupdict())
+                    if m := rgx.fullmatch(line):
+                        event = AuthfailEvent(
+                            timestamp=datetime.fromisoformat(m["timestamp"]),
+                            username=m["username"],
+                            src_addr=m["src_addr"],
+                        )
+                        failures.insert(event)
                         break
                 else:
                     raise ValueError("Could not parse logfile entry")

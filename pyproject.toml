@@ -32,9 +32,9 @@ classifiers = [
 ]
 
 dependencies = [
-    "prettytable     ~= 0.7.2",
+    "prettytable ~= 0.7.2",
     "psycopg2-binary ~= 2.7",
-    "SQLAlchemy      ~= 1.1",
+    "SQLAlchemy ~= 2.0",
 ]
 
 [project.urls]
@@ -42,7 +42,7 @@ dependencies = [
 "Bug Tracker" = "https://github.com/jwodder/logsdb/issues"
 
 [tool.hatch.version]
-path = "src/jwodder_logsdb/__init__.py"
+path = "src/logsdb/__init__.py"
 
 [tool.hatch.build.targets.sdist]
 include = [
@@ -53,6 +53,9 @@ include = [
     "CONTRIBUTORS.*",
     "tox.ini",
 ]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/logsdb"]
 
 [tool.mypy]
 allow_incomplete_defs = false

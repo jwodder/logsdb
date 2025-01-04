@@ -1,109 +1,84 @@
 from __future__ import annotations
+from collections.abc import Iterable
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from email import message_from_bytes, policy
 from email.headerregistry import Address
 import subprocess
 import sys
 import sqlalchemy as sa
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship, sessionmaker
-from .core import connect, iso8601_Z, one_day_ago
-
-Base = declarative_base()
-
-inbox_tocc = sa.Table(
-    "inbox_tocc",
-    Base.metadata,
-    sa.Column(
-        "msg_id",
-        sa.Integer,
-        sa.ForeignKey("inbox.id", ondelete="CASCADE"),
-        nullable=False,
-    ),
-    sa.Column(
-        "contact_id",
-        sa.Integer,
-        sa.ForeignKey("inbox_contacts.id", ondelete="CASCADE"),
-        nullable=False,
-    ),
-    sa.UniqueConstraint("msg_id", "contact_id"),
-)
+from sqlalchemy.orm import Mapped, MappedAsDataclass, mapped_column, relationship
+from .core import Base, Database, PKey, Str2048, iso8601_Z, one_day_ago
 
 
 class Contact(Base):
     __tablename__ = "inbox_contacts"
     __table_args__ = (sa.UniqueConstraint("realname", "email_address"),)
 
-    id = sa.Column(sa.Integer, primary_key=True, nullable=False)
-    realname = sa.Column(sa.Unicode(2048), nullable=False)
-    email_address = sa.Column(sa.Unicode(2048), nullable=False)
+    id: Mapped[PKey] = field(init=False)
+    realname: Mapped[Str2048]
+    email_address: Mapped[Str2048]
 
-    def __str__(self):
+    def __str__(self) -> str:
         # email.utils.formataddr performs an undesirable encoding of non-ASCII
         # characters
         return str(Address(self.realname, addr_spec=self.email_address))
 
 
+class ToCC(MappedAsDataclass, Base):
+    __tablename__ = "inbox_tocc"
+    __table_args__ = (sa.UniqueConstraint("msg_id", "contact_id"),)
+
+    msg_id: Mapped[PKey] = mapped_column(
+        sa.ForeignKey("inbox.id", ondelete="CASCADE"), init=False
+    )
+    contact_id: Mapped[PKey] = mapped_column(
+        sa.ForeignKey("inbox_contacts.id", ondelete="CASCADE"), init=False
+    )
+
+
 class EMail(Base):
     __tablename__ = "inbox"
 
-    id = sa.Column(sa.Integer, primary_key=True, nullable=False)
-    timestamp = sa.Column(sa.DateTime(timezone=True), nullable=False)
-    subject = sa.Column(sa.Unicode(2048), nullable=False)
-    sender_id = sa.Column(
-        "sender",
-        sa.Integer,
-        sa.ForeignKey("inbox_contacts.id", ondelete="CASCADE"),
-        nullable=False,
+    id: Mapped[PKey] = field(init=False)
+    timestamp: Mapped[datetime]
+    subject: Mapped[Str2048]
+    sender_id: Mapped[int] = mapped_column(
+        sa.ForeignKey("inbox_contacts.id", ondelete="CASCADE"), init=False
     )
-    sender = relationship("Contact")
-    size = sa.Column(sa.Integer, nullable=False)
-    date = sa.Column(sa.DateTime(timezone=True), nullable=False)
-    tocc = relationship("Contact", secondary=inbox_tocc)
+    sender: Mapped[Contact] = relationship(init=False)
+    size: Mapped[int]
+    date: Mapped[datetime]
+    tocc: Mapped[Contact] = relationship(secondary=ToCC)
 
 
+@dataclass
 class MailLog:
-    def __init__(self, engine):
-        Base.metadata.create_all(engine)
-        self.engine = engine
-        self.session = None
+    db: Database
 
-    def __enter__(self):
-        self.session = sessionmaker(bind=self.engine)()
-        return self
-
-    def __exit__(self, _exc_type, _exc_value, _exc_tb):
-        self.session.close()
-        return False
-
-    def get_contact(self, contact):
-        """
-        :type contact: email.headerregistry.Address
-        :return: Contact
-        """
-        cnobj = (
-            self.session.query(Contact)
+    def get_contact(self, contact: Address) -> Contact:
+        cnobj = self.db.session.scalar(
+            sa.select(Contact)
             .filter(Contact.realname == contact.display_name)
             .filter(Contact.email_address == contact.addr_spec)
-            .first()
         )
         if cnobj is None:
             cnobj = Contact(
                 realname=contact.display_name,
                 email_address=contact.addr_spec,
             )
-            self.session.add(cnobj)
+            self.db.add(cnobj)
         return cnobj
 
-    def insert_entry(self, subject, sender, date, recipients, size):
-        """
-        :type subject: str
-        :type sender: email.headerregistry.Address
-        :type date: datetime.datetime
-        :type recipients: Iterable[email.headerregistry.Address]
-        :type size: int
-        """
-        self.session.add(
+    def insert_entry(
+        self,
+        subject: str,
+        sender: Address,
+        date: datetime,
+        recipients: Iterable[Address],
+        size: int,
+    ) -> None:
+        self.db.add(
             EMail(
                 timestamp=datetime.now(timezone.utc).astimezone(),
                 subject=subject[:2048],
@@ -113,15 +88,15 @@ class MailLog:
                 tocc=list(set(map(self.get_contact, recipients))),
             )
         )
-        self.session.commit()
 
-    def daily_report(self):
+    def daily_report(self) -> str:
         title = "E-mails received in the past 24 hours:"
-        newmail = (
-            self.session.query(EMail)
-            .filter(EMail.timestamp >= one_day_ago())
-            .order_by(sa.asc(EMail.timestamp), sa.asc(EMail.id))
-            .all()
+        newmail = list(
+            self.db.session.scalars(
+                sa.select(EMail)
+                .filter(EMail.timestamp >= one_day_ago())
+                .order_by(sa.asc(EMail.timestamp), sa.asc(EMail.id))
+            )
         )
         if not newmail:
             return title + " none\n"
@@ -155,11 +130,11 @@ def main():
         size = len(rawmsg)
         msg = message_from_bytes(rawmsg, policy=policy.default)
         recipients = ()
-        for field in ("To", "CC"):
-            if field in msg:
-                recipients += msg[field].addresses
-        with MailLog(connect()) as db:
-            db.insert_entry(
+        for fieldname in ("To", "CC"):
+            if fieldname in msg:
+                recipients += msg[fieldname].addresses
+        with Database.connect() as db, MailLog(db) as tbl:
+            tbl.insert_entry(
                 subject=msg["Subject"] or "NO SUBJECT",
                 sender=msg["From"].addresses[0],
                 date=msg["Date"].datetime,
