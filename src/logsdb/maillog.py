@@ -85,6 +85,13 @@ class MailLog:
         recipients: Iterable[Address],
         size: int,
     ) -> None:
+        tocc = []
+        tocc_ids = set()
+        for r in recipients:
+            c = self.get_contact(r)
+            if c.id not in tocc_ids:
+                tocc.append(c)
+                tocc_ids.add(c.id)
         self.db.add(
             EMail(
                 timestamp=datetime.now(timezone.utc).astimezone(),
@@ -92,7 +99,7 @@ class MailLog:
                 sender=self.get_contact(sender),
                 size=size,
                 date=date,
-                tocc=list(set(map(self.get_contact, recipients))),
+                tocc=tocc,
             )
         )
 
