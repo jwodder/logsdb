@@ -3,7 +3,7 @@ from email.message import EmailMessage
 from pathlib import Path
 import sys
 import click
-from . import __version__
+from . import __version__, apache_access, authfail, dailyreport, maillog
 from .config import Config
 
 
@@ -26,40 +26,32 @@ def main(ctx: click.Context, config_file: Path) -> None:
     ctx.obj = Config.from_ini_file(config_file)
 
 
-@main.command()
+@main.command("apache-access")
 @click.pass_obj
-def apache_access(cfg: Config) -> None:
-    from .apache_access import process_input
-
+def apache_access_cmd(cfg: Config) -> None:
     with cfg.connect_to_database() as db:
-        process_input(db)
+        apache_access.process_input(db)
 
 
-@main.command()
+@main.command("authfail")
 @click.pass_obj
-def authfail(cfg: Config) -> None:
-    from .authfail import process_input
-
+def authfail_cmd(cfg: Config) -> None:
     with cfg.connect_to_database() as db:
-        process_input(db)
+        authfail.process_input(db)
 
 
-@main.command()
+@main.command("maillog")
 @click.pass_obj
-def maillog(cfg: Config) -> None:
-    from .maillog import process_input
-
+def maillog_cmd(cfg: Config) -> None:
     with cfg.connect_to_database() as db:
-        process_input(db)
+        maillog.process_input(db)
 
 
-@main.command()
+@main.command("dailyreport")
 @click.pass_obj
-def dailyreport(cfg: Config) -> None:
-    from .dailyreport import get_daily_report
-
+def dailyreport_cmd(cfg: Config) -> None:
     with cfg.connect_to_database() as db:
-        report = get_daily_report(db, cfg)
+        report = dailyreport.get_daily_report(db, cfg)
     if sys.stdout.isatty():
         # Something about typical dailyreport contents (the size? long lines?)
         # invariably causes serialized EmailMessage's to use quoted-printable
