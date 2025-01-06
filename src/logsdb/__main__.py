@@ -15,6 +15,11 @@ from .config import Config
     type=click.Path(exists=True, readable=True, dir_okay=False, path_type=Path),
     required=True,
 )
+@click.option(
+    "-l",
+    "--logfile",
+    type=click.Path(exists=False, writable=True, dir_okay=False, path_type=Path),
+)
 @click.version_option(
     __version__,
     "-V",
@@ -22,8 +27,10 @@ from .config import Config
     message="%(prog)s %(version)s",
 )
 @click.pass_context
-def main(ctx: click.Context, config_file: Path) -> None:
+def main(ctx: click.Context, config_file: Path, logfile: Path | None) -> None:
     ctx.obj = Config.from_ini_file(config_file)
+    if logfile is not None:
+        sys.stderr = logfile.open("a")
 
 
 @main.command("apache-access")
