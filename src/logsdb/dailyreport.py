@@ -77,7 +77,7 @@ def check_reboot(tags: set[str]) -> str | None:
         try:
             with open("/var/run/reboot-required.pkgs") as fp:
                 pkgs = fp.read().splitlines()
-        except IOError:
+        except OSError:
             pkgs = []
         report = "Reboot required by the following packages:"
         if pkgs:
@@ -92,7 +92,7 @@ def check_reboot(tags: set[str]) -> str | None:
 def check_vnstat() -> str:
     vnstat = subprocess.check_output(
         ["vnstat", "--json", "d", "2", "-i", "eth0"],
-        universal_newlines=True,
+        text=True,
     )
     data = json.loads(vnstat)
     yesterday = data["interfaces"][0]["traffic"]["day"][0]
