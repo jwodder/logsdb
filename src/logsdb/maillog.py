@@ -118,7 +118,7 @@ class MailLog:
         dests = set(
             subprocess.check_output(
                 ["postconf", "-hx", "mydestination"],
-                universal_newlines=True,
+                text=True,
             )
             .strip()
             .lower()
