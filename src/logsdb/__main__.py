@@ -28,7 +28,7 @@ from .config import Config
 )
 @click.pass_context
 def main(ctx: click.Context, config_file: Path, logfile: Path | None) -> None:
-    ctx.obj = Config.from_ini_file(config_file)
+    ctx.obj = Config.from_toml_file(config_file)
     if logfile is not None:
         sys.stderr = logfile.open("a")
 

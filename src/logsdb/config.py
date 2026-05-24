@@ -1,6 +1,6 @@
 from __future__ import annotations
-from configparser import ConfigParser
 from pathlib import Path
+import tomllib
 from pydantic import BaseModel
 import sqlalchemy as sa
 from .core import Database
@@ -34,13 +34,10 @@ class Config(BaseConfig):
     dailyreport: DailyReportCfg
 
     @classmethod
-    def from_ini_file(cls, inifile: Path) -> Config:
-        cfg = ConfigParser()
-        with inifile.open() as fp:
-            cfg.read_file(fp)
-        return cls.model_validate(
-            {k: dict(v) for k, v in cfg.items() if k != "DEFAULT"}
-        )
+    def from_toml_file(cls, fpath: Path) -> Config:
+        with fpath.open("rb") as fp:
+            data = tomllib.load(fp)
+        return cls.model_validate(data)
 
     def connect_to_database(self) -> Database:
         url = sa.engine.URL.create(
