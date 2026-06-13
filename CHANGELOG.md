@@ -6,6 +6,7 @@ In Development
 - Added a global `--logfile` option for replacing stderr
 - Support Python 3.14
 - Change config file format from INI to TOML
+- Added a basic README
 
 v2025.1.4
 ---------
