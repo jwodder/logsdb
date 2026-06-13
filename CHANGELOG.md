@@ -1,5 +1,5 @@
-In Development
---------------
+v2026.6.13
+----------
 - Use `versioningit` for versioning
 - `maillog`: Fix a bug with deduplication of `tocc` contacts when inserting
   e-mails into the database
