@@ -60,6 +60,7 @@ include = [
 ]
 
 [tool.hatch.build.targets.wheel]
+# Needed because the project name differs from the package name:
 packages = ["src/logsdb"]
 
 [tool.mypy]
