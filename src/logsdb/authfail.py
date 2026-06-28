@@ -66,10 +66,7 @@ def process_input(db: Database) -> None:
     line = None
     try:
         tbl = Authfail(db)
-        # `for line in sys.stdin` cannot be used here because Python buffers
-        # stdin when iterating over it, causing the script to wait for some
-        # too-large number of lines to be passed to it until it'll do anything.
-        for line in iter(sys.stdin.readline, ""):
+        for line in sys.stdin:
             for rgx in MSG_REGEXEN:
                 if m := rgx.fullmatch(line):
                     tbl.insert(
