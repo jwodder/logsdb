@@ -57,7 +57,7 @@ MSG_REGEXEN = [
         r"(?P<timestamp>\S+) \S+ sshd(?:-session)?\[\d+\]:"
         r"(?: message repeated \d+ times: \[)?"
         r" Invalid user (?P<username>.*?)"
-        r" from (?P<src_addr>\S+) port \d+\s*",
+        r" from (?P<src_addr>\S+) port \d+\]?\s*",
     ),
 ]
 
